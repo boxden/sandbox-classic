@@ -1,0 +1,114 @@
+﻿@using Sandbox.UI
+@using Sandbox.Modals
+@using Sandbox.Network
+
+@inherits Panel
+
+<root class="create-game-modal">
+    <div class="inner-modal">
+        <div class="header">
+            <div class="title">Create Game</div>
+        </div>
+
+        <div class="body">
+            <FormGroup>
+                <Label>Server Name</Label>
+                <Control>
+                    <TextEntry Value:bind="@CurrentConfig.Name" />
+                </Control>
+            </FormGroup>
+
+            <FormGroup class="form-group">
+                <Label>Max Players</Label>
+                <Control>
+                    <SliderControl ShowRange="@true" Min=@(1) Max=@(32) Value:bind="@CurrentConfig.MaxPlayers" />
+                </Control>
+            </FormGroup>
+
+            <FormGroup class="form-group">
+                <Label>Map</Label>
+                <Control>
+                    <MapSelectButton MapIdent=@LaunchArguments.Map OnClicked="@OnMapClicked" />
+                </Control>
+            </FormGroup>
+        </div>
+
+        <div class="actions">
+            <button class="button is-cancel" @onclick=@( () => Delete() )>
+                <i>cancel</i>
+                <column>
+                    Cancel
+                </column>
+            </button>
+
+            <button class="button" @onclick=@CreateGame>
+                <i>done</i>
+                <column>
+                    Create Game
+                </column>
+            </button>
+        </div>
+    </div>
+</root>
+
+@code
+{
+    LobbyConfig CurrentConfig;
+
+    public CreateGameModal()
+    {
+        AddClass("modal");
+
+        CurrentConfig = new LobbyConfig()
+            {
+                MaxPlayers = 1,
+                Name = "Sandbox Classic Server"
+            };
+
+        LaunchArguments.Map = "softsplit.gm_bigcity";
+    }
+
+    async void CreateGame()
+    {
+        // NOTE: For some reason, ISceneStartup.OnHostInitialize isn't being called
+        // when starting from the menu scene. Shitty CTRL+C CTRL+V fix for now
+
+        Scene.Load(MainMenuPanel.Current.GameScene);
+
+        // If the map is a scene, load it
+        var mapPackage = await Package.FetchAsync(LaunchArguments.Map, false);
+        if (mapPackage == null) return;
+
+        var primaryAsset = mapPackage.GetMeta<string>("PrimaryAsset");
+        if (string.IsNullOrEmpty(primaryAsset)) return;
+
+        var sceneLoadOptions = new SceneLoadOptions { IsAdditive = true };
+
+        if (primaryAsset.EndsWith(".scene"))
+        {
+            await mapPackage.MountAsync();
+
+            var sceneFile = mapPackage.GetMeta<SceneFile>("PrimaryAsset");
+            sceneLoadOptions.SetScene(sceneFile);
+            Scene.Load(sceneLoadOptions);
+        }
+
+        sceneLoadOptions.SetScene("scenes/engine.scene");
+        Scene.Load(sceneLoadOptions);
+
+        Networking.CreateLobby(CurrentConfig);
+    }
+
+    void OnMapClicked()
+    {
+        Game.Overlay.ShowPackageSelector("type:map sort:trending", OnMapSelected);
+    }
+
+    void OnMapSelected(Package map)
+    {
+        LaunchArguments.Map = map.FullIdent;
+        StateHasChanged();
+    }
+
+    protected override int BuildHash() => HashCode.Combine(LaunchArguments.Map);
+}
